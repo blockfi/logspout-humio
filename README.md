@@ -7,13 +7,7 @@ Because Humio is capable of accepting Splunk HEC formatted log events, but Logsp
 
 ## Build
 
-To build locally for testing:
-```
-go get -d -v
-go build -v -ldflags "-X main.Version=3.2.11"
-```
-
-Then build the docker container:
+To build the docker container:
 ```
 docker build --no-cache -t $(whoami)/logspout-humio:0.0.1 .
 ```
@@ -114,6 +108,35 @@ Don't forget to prune containers on your system `docker system prune --volumes`.
  * `HUMIO_SOURCETYPE`: `docker` - the `sourcetype` field in the JSON for each event will contain this value
  * `HUMIO_DOCKER_LABELS`: - include the docker container labels in the events
  * `DEBUG`: `false` - when true output more debugging messages
+
+## Development
+
+* Edit, fix, etc. the code.
+
+* Build locally for testing.
+```
+$ go get -d -v
+$ go build -v -ldflags "-X main.Version=3.2.11"
+```
+
+* Edit the `VERSION` environment variable in the top of the `Dockerfile` to your new version.
+* Commit your changes.
+```
+$ git commit -m "blah blah" .
+```
+
+Tag the commit.
+```
+$ git tag -f -a v0.0.1 -m "Functional, if not complete."
+```
+
+Push the commit and the tags to your remote branch.
+```
+$ git push --follow-tags
+```
+
+Build the Docker container according to the instructions above.
+
 
 ## License
 ASLv2. See [License](LICENSE)
