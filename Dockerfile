@@ -17,6 +17,7 @@ RUN curl -fSL -o logspout.tar.gz "https://github.com/gliderlabs/logspout/archive
 
 WORKDIR /go/src/github.com/gliderlabs/logspout
 RUN echo 'import ( _ "github.com/blockfi/logspout-humio" )' >> /go/src/github.com/gliderlabs/logspout/modules.go
+RUN go get -d -v github.com/blockfi/logspout-humio@a3330b359298cf7c6b87d7fb9ec3c65aea75a15e
 RUN go get -d -v ./...
 RUN go build -v -ldflags "-X main.Version=$(cat VERSION)" -o ./bin/logspout
 
