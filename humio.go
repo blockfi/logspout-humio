@@ -263,7 +263,7 @@ func (a *HumioAdapter) flushHttp(reason string) {
 	for i := range buffer {
 		m := buffer[i]
 		humioMessageEvent := HumioMessageEvent{Message: m.Data}
-		if os.Getenv("HUMIO_DOCKER_LABELS") != "" && len(m.Container.Config.Labels) > 0 {
+		if (os.Getenv("HUMIO_DOCKER_LABELS") != "" && len(m.Container.Config.Labels) > 0) {
 			humioMessageEvent.Labels = make(map[string]string)
 			for label, value := range m.Container.Config.Labels {
 				humioMessageEvent.Labels[strings.Replace(label, ".", "_", -1)] = value
