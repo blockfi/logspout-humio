@@ -31,7 +31,7 @@ const (
 	// Rfc3164Format is the legacy BSD syslog protocol format. https://tools.ietf.org/html/rfc3164
 	Rfc3164Format Format = "rfc3164"
 
-	defaultFormat     = Rfc5424Format
+	defaultFormat = Rfc5424Format
 )
 
 var (
@@ -40,7 +40,6 @@ var (
 
 // Format represents the RFC spec to use for messages
 type Format string
-
 
 func init() {
 	hostname, _ = os.Hostname()
@@ -202,8 +201,8 @@ type FieldTemplates struct {
 
 // HumioAdapter is an adapter that POSTs logs to an HTTP endpoint
 type HumioAdapter struct {
-	format     Format
-	tmpl       *FieldTemplates
+	format            Format
+	tmpl              *FieldTemplates
 	route             *router.Route
 	url               string
 	client            *http.Client
@@ -214,9 +213,9 @@ type HumioAdapter struct {
 	totalMessageCount int
 	bufferMutex       sync.Mutex
 	useGzip           bool
-	crash		  bool
-	humioToken	  string
-	humioIndex	  string
+	crash             bool
+	humioToken        string
+	humioIndex        string
 	humioSourcetype   string
 }
 
@@ -269,14 +268,14 @@ func NewHumioAdapter(route *router.Route) (router.LogAdapter, error) {
 	}
 
 	humioIndex := "main"
-        if os.Getenv("HUMIO_INDEX") != "" {
+	if os.Getenv("HUMIO_INDEX") != "" {
 		humioIndex = os.Getenv("HUMIO_INDEX")
 	}
 
-        humioSourcetype := "docker"
-        if os.Getenv("HUMIO_SOURCETYPE") != "" {
-                humioSourcetype = os.Getenv("HUMIO_SOURCETYPE")
-        }
+	humioSourcetype := "docker"
+	if os.Getenv("HUMIO_SOURCETYPE") != "" {
+		humioSourcetype = os.Getenv("HUMIO_SOURCETYPE")
+	}
 
 	client := &http.Client{Transport: transport}
 
@@ -311,7 +310,11 @@ func NewHumioAdapter(route *router.Route) (router.LogAdapter, error) {
 
 	// Should we crash on an error or keep going?
 	var crash = false
-	if os.Getenv("DEBUG") != "" { crash = true } else { crash = false }
+	if os.Getenv("DEBUG") != "" {
+		crash = true
+	} else {
+		crash = false
+	}
 	crashString := getStringParameter(route.Options, "http.crash", "true")
 	if crashString == "false" {
 		crash = false
@@ -320,20 +323,20 @@ func NewHumioAdapter(route *router.Route) (router.LogAdapter, error) {
 
 	// Make the HTTP adapter
 	return &HumioAdapter{
-		format:     format,
-		tmpl:       tmpl,
-		route:      route,
-		url:        endpointUrl,
-		client:     client,
-		buffer:     buffer,
-		timer:      timer,
-		capacity:   capacity,
-		timeout:    timeout,
-		useGzip:    useGzip,
-		crash:      crash,
-		humioToken:		humioToken,
-		humioIndex:		humioIndex,
-		humioSourcetype:	humioSourcetype,
+		format:          format,
+		tmpl:            tmpl,
+		route:           route,
+		url:             endpointUrl,
+		client:          client,
+		buffer:          buffer,
+		timer:           timer,
+		capacity:        capacity,
+		timeout:         timeout,
+		useGzip:         useGzip,
+		crash:           crash,
+		humioToken:      humioToken,
+		humioIndex:      humioIndex,
+		humioSourcetype: humioSourcetype,
 	}, nil
 }
 
@@ -347,16 +350,6 @@ func (a *HumioAdapter) Stream(logstream chan *router.Message) {
 	for {
 		select {
 		case message := <-logstream:
-			if os.Getenv("HUMIO_DISABLE_SYSLOG_FMT") != "" {
-				m := &Message{message}
-				buf, err := m.Render(a.format, a.tmpl)
-				if err != nil {
-					log.Println("humio:", err)
-					return
-				}
-				m.Data = BytesToString(buf)
-				debug("message: ", m.Data)
-			}
 
 			// Append the message to the buffer
 			a.bufferMutex.Lock()
@@ -403,8 +396,16 @@ func (a *HumioAdapter) flushHttp(reason string) {
 	// Create JSON representation of all messages
 	messages := make([]string, 0, len(buffer))
 	for i := range buffer {
-		m := buffer[i]
-		humioMessageEvent := HumioMessageEvent{Message: m.Data}
+		m := &Message{buffer[i]}
+
+		var humioMessageEvent HumioMessageEvent
+		buf, err := m.Render(a.format, a.tmpl)
+		if err != nil {
+			humioMessageEvent = HumioMessageEvent{Message: buffer[i].Data}
+		} else {
+			humioMessageEvent = HumioMessageEvent{Message: BytesToString(buf)}
+		}
+
 		if os.Getenv("HUMIO_DOCKER_LABELS") != "" {
 			humioMessageEvent.Labels = make(map[string]string)
 			for label, value := range m.Container.Config.Labels {
@@ -412,11 +413,11 @@ func (a *HumioAdapter) flushHttp(reason string) {
 			}
 		}
 		humioMessage := HumioMessage{
-			Time:           m.Time.Format(time.RFC3339Nano),
-			Hostname:	m.Container.Config.Hostname,
-			Source:		m.Source,
-			SourceType:	a.humioSourcetype,
-			Event:		humioMessageEvent,
+			Time:       m.Time.Format(time.RFC3339Nano),
+			Hostname:   m.Container.Config.Hostname,
+			Source:     m.Source,
+			SourceType: a.humioSourcetype,
+			Event:      humioMessageEvent,
 		}
 		message, err := json.Marshal(humioMessage)
 		if err != nil {
@@ -493,9 +494,9 @@ func createRequest(url string, useGzip bool, humioToken string, payload string) 
 		}
 	}
 
-	if (humioToken != "") {
-		request.Header.Set("Authorization", "Bearer " + humioToken)
-        }
+	if humioToken != "" {
+		request.Header.Set("Authorization", "Bearer "+humioToken)
+	}
 
 	request.Header.Set("Content-Type", "text/plain; charset=utf-8")
 
@@ -503,19 +504,18 @@ func createRequest(url string, useGzip bool, humioToken string, payload string) 
 }
 
 type HumioMessageEvent struct {
-        Message         string			`json:"message"`
-	Labels		map[string]string	`json:"labels"`
+	Message string            `json:"message"`
+	Labels  map[string]string `json:"labels"`
 }
 
 // HumioMessage is a simple JSON representation of the log message.
 type HumioMessage struct {
-	Time		string `json:"time"`
-	Source		string `json:"source"`
-	SourceType	string `json:"sourcetype"`
-	Hostname	string `json:"host"`
-	Event		HumioMessageEvent	`json:"event"`
+	Time       string            `json:"time"`
+	Source     string            `json:"source"`
+	SourceType string            `json:"sourcetype"`
+	Hostname   string            `json:"host"`
+	Event      HumioMessageEvent `json:"event"`
 }
-
 
 // Message extends router.Message for the syslog standard
 type Message struct {
