@@ -1,14 +1,15 @@
 version: 2.1
 
-baseline_executor:
-  working_directory: ~/logspout-humio
-  shell: /bin/bash -eo pipefail -l
-  resource_class: large
-  docker:
-    - image: "${AWS_ECR_ACCOUNT_URL}/blockfi/builder:${CIRCLE_SHA1}"
-      aws_auth:
-        aws_access_key_id: ${AWS_ACCESS_KEY_ID}
-        aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+executors:
+  baseline_executor:
+    working_directory: ~/logspout-humio
+    shell: /bin/bash -eo pipefail -l
+    resource_class: large
+    docker:
+      - image: "${AWS_ECR_ACCOUNT_URL}/blockfi/builder:${CIRCLE_SHA1}"
+        aws_auth:
+          aws_access_key_id: ${AWS_ACCESS_KEY_ID}
+          aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
 
 commands:
   # Login to ECR
