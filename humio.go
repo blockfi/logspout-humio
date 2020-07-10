@@ -438,7 +438,6 @@ func (a *HumioAdapter) flushHttp(reason string) {
 		response, err := a.client.Do(request)
 		if err != nil {
 			debug("humio - error on client.Do:", err, a.url)
-			// TODO now what?
 			if a.crash {
 				die("humio - error on client.Do:", err, a.url)
 			} else {
@@ -446,7 +445,6 @@ func (a *HumioAdapter) flushHttp(reason string) {
 			}
 		} else if response.StatusCode != 200 {
 			debug("humio: response not 200 but", response.StatusCode)
-			// TODO now what?
 			if a.crash {
 				die("humio: response not 200 but", response.StatusCode)
 			}
@@ -561,6 +559,7 @@ func (m *Message) Render(format Format, tmpl *FieldTemplates) ([]byte, error) {
 
 	buf := new(bytes.Buffer)
 	switch format {
+/*
 	case Rfc5424Format:
 		// notes from RFC:
 		// - there is no upper limit for the entire message and depends on the transport in use
@@ -570,12 +569,31 @@ func (m *Message) Render(format Format, tmpl *FieldTemplates) ([]byte, error) {
 		fmt.Fprintf(buf, "<%s>1 %s %.255s %.48s %.128s - %s %s\n",
 			priority, timestamp, hostname, tag, pid, structuredData, data,
 		)
+*/
+	case Rfc5424Format:
+		// notes from RFC:
+		// - there is no upper limit for the entire message and depends on the transport in use
+		// - the HOSTNAME field must not exceed 255 characters
+		// - the TAG field must not exceed 48 characters
+		// - the PROCID field must not exceed 128 characters
+		fmt.Fprintf(buf, "%s %.255s %.48s %.128s - %s %s\n",
+			timestamp, hostname, tag, pid, structuredData, data,
+		)
+/*
 	case Rfc3164Format:
 		// notes from RFC:
 		// - the entire message must be <= 1024 bytes
 		// - the TAG field must not exceed 32 characters
 		fmt.Fprintf(buf, "<%s>%s %s %.32s[%s]: %s\n",
 			priority, timestamp, hostname, tag, pid, data,
+		)
+*/
+	case Rfc3164Format:
+		// notes from RFC:
+		// - the entire message must be <= 1024 bytes
+		// - the TAG field must not exceed 32 characters
+		fmt.Fprintf(buf, "%s %s %.32s[%s]: %s\n",
+			timestamp, hostname, tag, pid, data,
 		)
 	}
 
@@ -601,7 +619,7 @@ func (m *Message) Hostname() string {
 
 // Timestamp returns the message's syslog formatted timestamp
 func (m *Message) Timestamp() string {
-	return m.Message.Time.Format(time.RFC3339)
+	return m.Message.Time.Format(time.RFC3339Nano)
 }
 
 // ContainerName returns the message's container name
