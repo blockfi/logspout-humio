@@ -1,7 +1,7 @@
 FROM golang:alpine as build
 MAINTAINER timo.taskinen@vincit.fi
 LABEL maintainer "greg@burd.me"
-ENV VERSION=0.0.1
+ENV VERSION=0.0.2
 ENV LOGSPOUT_VERSION=3.2.11
 RUN mkdir -p /go/src
 WORKDIR /go/src
