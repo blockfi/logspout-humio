@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"log/syslog"
 	"net"
 	"net/http"
 	"net/url"
@@ -19,27 +18,14 @@ import (
 	"sync"
 	"text/template"
 	"time"
-	"unsafe"
 
 	"github.com/gliderlabs/logspout/cfg"
 	"github.com/gliderlabs/logspout/router"
 )
 
-const (
-	// Rfc5424Format is the modern syslog protocol format. https://tools.ietf.org/html/rfc5424
-	Rfc5424Format Format = "rfc5424"
-	// Rfc3164Format is the legacy BSD syslog protocol format. https://tools.ietf.org/html/rfc3164
-	Rfc3164Format Format = "rfc3164"
-
-	defaultFormat = Rfc5424Format
-)
-
 var (
 	hostname string
 )
-
-// Format represents the RFC spec to use for messages
-type Format string
 
 func init() {
 	hostname, _ = os.Hostname()
@@ -56,25 +42,13 @@ func die(v ...interface{}) {
 	panic(fmt.Sprintln(v...))
 }
 
-func getFormat() (Format, error) {
-	switch s := cfg.GetEnvDefault("SYSLOG_FORMAT", string(defaultFormat)); s {
-	case string(Rfc5424Format):
-		return Rfc5424Format, nil
-	case string(Rfc3164Format):
-		return Rfc3164Format, nil
-	default:
-		return defaultFormat, fmt.Errorf("unknown SYSLOG_FORMAT value: %s", s)
-	}
-}
-
 func getHostname() string {
 	content, err := ioutil.ReadFile("/etc/host_hostname")
 	if err == nil && len(content) > 0 {
-		hostname = strings.TrimRight(string(content), "\r\n")
+		return strings.TrimRight(string(content), "\r\n")
 	} else {
-		hostname = cfg.GetEnvDefault("SYSLOG_HOSTNAME", "{{.Container.Config.Hostname}}")
+		return cfg.GetEnvDefault("SYSLOG_HOSTNAME", "{{.Container.Config.Hostname}}")
 	}
-	return hostname
 }
 
 func getFieldTemplates(route *router.Route) (*FieldTemplates, error) {
@@ -111,20 +85,6 @@ func getFieldTemplates(route *router.Route) (*FieldTemplates, error) {
 		return nil, err
 	}
 	debug("setting pid to:", s)
-
-	s = cfg.GetEnvDefault("SYSLOG_STRUCTURED_DATA", "")
-	if route.Options["structured_data"] != "" {
-		s = route.Options["structured_data"]
-	}
-	if s == "" {
-		s = "-"
-	} else {
-		s = fmt.Sprintf("[%s]", s)
-	}
-	if tmpl.structuredData, err = template.New("structuredData").Parse(s); err != nil {
-		return nil, err
-	}
-	debug("setting structuredData to:", s)
 
 	s = cfg.GetEnvDefault("SYSLOG_DATA", "{{.Data}}")
 	if tmpl.data, err = template.New("data").Parse(s); err != nil {
@@ -188,20 +148,18 @@ func dial(netw, addr string) (net.Conn, error) {
 	return dial, err
 }
 
-// FieldTemplates for rendering Syslog messages
+// FieldTemplates for rendering messages
 type FieldTemplates struct {
-	priority       *template.Template
-	timestamp      *template.Template
-	hostname       *template.Template
-	tag            *template.Template
-	pid            *template.Template
-	structuredData *template.Template
-	data           *template.Template
+	priority  *template.Template
+	timestamp *template.Template
+	hostname  *template.Template
+	tag       *template.Template
+	pid       *template.Template
+	data      *template.Template
 }
 
 // HumioAdapter is an adapter that POSTs logs to an HTTP endpoint
 type HumioAdapter struct {
-	format            Format
 	tmpl              *FieldTemplates
 	route             *router.Route
 	url               string
@@ -215,18 +173,10 @@ type HumioAdapter struct {
 	useGzip           bool
 	crash             bool
 	humioToken        string
-	humioIndex        string
-	humioSourcetype   string
 }
 
 // NewHumioAdapter creates an HumioAdapter
 func NewHumioAdapter(route *router.Route) (router.LogAdapter, error) {
-
-	format, err := getFormat()
-	if err != nil {
-		return nil, err
-	}
-	debug("setting format to:", format)
 
 	tmpl, err := getFieldTemplates(route)
 	if err != nil {
@@ -265,16 +215,6 @@ func NewHumioAdapter(route *router.Route) (router.LogAdapter, error) {
 
 	if os.Getenv("HUMIO_TLS") == "false" {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	}
-
-	humioIndex := "main"
-	if os.Getenv("HUMIO_INDEX") != "" {
-		humioIndex = os.Getenv("HUMIO_INDEX")
-	}
-
-	humioSourcetype := "docker"
-	if os.Getenv("HUMIO_SOURCETYPE") != "" {
-		humioSourcetype = os.Getenv("HUMIO_SOURCETYPE")
 	}
 
 	client := &http.Client{Transport: transport}
@@ -323,26 +263,18 @@ func NewHumioAdapter(route *router.Route) (router.LogAdapter, error) {
 
 	// Make the HTTP adapter
 	return &HumioAdapter{
-		format:          format,
-		tmpl:            tmpl,
-		route:           route,
-		url:             endpointUrl,
-		client:          client,
-		buffer:          buffer,
-		timer:           timer,
-		capacity:        capacity,
-		timeout:         timeout,
-		useGzip:         useGzip,
-		crash:           crash,
-		humioToken:      humioToken,
-		humioIndex:      humioIndex,
-		humioSourcetype: humioSourcetype,
+		tmpl:       tmpl,
+		route:      route,
+		url:        endpointUrl,
+		client:     client,
+		buffer:     buffer,
+		timer:      timer,
+		capacity:   capacity,
+		timeout:    timeout,
+		useGzip:    useGzip,
+		crash:      crash,
+		humioToken: humioToken,
 	}, nil
-}
-
-func BytesToString(data []byte) string {
-	return *(*string)(unsafe.Pointer(&data))
-	//	return string(data[:])
 }
 
 // Stream implements the router.LogAdapter interface
@@ -398,32 +330,26 @@ func (a *HumioAdapter) flushHttp(reason string) {
 	for i := range buffer {
 		m := &Message{buffer[i]}
 
-		var humioMessageEvent HumioMessageEvent
-		buf, err := m.Render(a.format, a.tmpl)
-		if err != nil {
-			humioMessageEvent = HumioMessageEvent{Message: buffer[i].Data}
-		} else {
-			humioMessageEvent = HumioMessageEvent{Message: BytesToString(buf)}
-		}
-
+		evt := HumioMessageEvent{Message: buffer[i].Data}
 		if os.Getenv("HUMIO_DOCKER_LABELS") != "" {
-			humioMessageEvent.Labels = make(map[string]string)
+			evt.Labels = make(map[string]string)
 			for label, value := range m.Container.Config.Labels {
-				humioMessageEvent.Labels[strings.Replace(label, ".", "_", -1)] = value
+				evt.Labels[strings.Replace(label, ".", "_", -1)] = value
 			}
 		}
-		humioMessage := HumioMessage{
-			Time:       m.Time.Format(time.RFC3339Nano),
-			Hostname:   m.Container.Config.Hostname,
-			Source:     m.Source,
-			SourceType: a.humioSourcetype,
-			Event:      humioMessageEvent,
+
+		hm, err := m.Render(a.tmpl)
+		if err != nil {
+			log.Println("humio:", err)
+			continue
 		}
-		message, err := json.Marshal(humioMessage)
+
+		message, err := json.Marshal(hm)
 		if err != nil {
 			debug("flushHttp - Error encoding JSON: ", err)
 			continue
 		}
+
 		messages = append(messages, string(message))
 	}
 
@@ -508,11 +434,14 @@ type HumioMessageEvent struct {
 
 // HumioMessage is a simple JSON representation of the log message.
 type HumioMessage struct {
-	Time       string            `json:"time"`
-	Source     string            `json:"source"`
-	SourceType string            `json:"sourcetype"`
-	Hostname   string            `json:"host"`
-	Event      HumioMessageEvent `json:"event"`
+	Timestamp string            `json:"timestamp"`
+	Priority  string            `json:"priority"`
+	Tag       string            `json:"tag"`
+	Pid       string            `json:"pid"`
+	Data      string            `json:"data"`
+	Source    string            `json:"source"`
+	Hostname  string            `json:"host"`
+	Event     HumioMessageEvent `json:"event"`
 }
 
 // Message extends router.Message for the syslog standard
@@ -521,7 +450,8 @@ type Message struct {
 }
 
 // Render transforms the log message using the Syslog template
-func (m *Message) Render(format Format, tmpl *FieldTemplates) ([]byte, error) {
+func (m *Message) Render(tmpl *FieldTemplates) (*HumioMessage, error) {
+
 	priority := new(bytes.Buffer)
 	if err := tmpl.priority.Execute(priority, m); err != nil {
 		return nil, err
@@ -547,68 +477,46 @@ func (m *Message) Render(format Format, tmpl *FieldTemplates) ([]byte, error) {
 		return nil, err
 	}
 
-	structuredData := new(bytes.Buffer)
-	if err := tmpl.structuredData.Execute(structuredData, m); err != nil {
-		return nil, err
-	}
-
 	data := new(bytes.Buffer)
 	if err := tmpl.data.Execute(data, m); err != nil {
 		return nil, err
 	}
 
-	buf := new(bytes.Buffer)
-	switch format {
-/*
-	case Rfc5424Format:
-		// notes from RFC:
-		// - there is no upper limit for the entire message and depends on the transport in use
-		// - the HOSTNAME field must not exceed 255 characters
-		// - the TAG field must not exceed 48 characters
-		// - the PROCID field must not exceed 128 characters
-		fmt.Fprintf(buf, "<%s>1 %s %.255s %.48s %.128s - %s %s\n",
-			priority, timestamp, hostname, tag, pid, structuredData, data,
-		)
-*/
-	case Rfc5424Format:
-		// notes from RFC:
-		// - there is no upper limit for the entire message and depends on the transport in use
-		// - the HOSTNAME field must not exceed 255 characters
-		// - the TAG field must not exceed 48 characters
-		// - the PROCID field must not exceed 128 characters
-		fmt.Fprintf(buf, "%s %.255s %.48s %.128s - %s %s\n",
-			timestamp, hostname, tag, pid, structuredData, data,
-		)
-/*
-	case Rfc3164Format:
-		// notes from RFC:
-		// - the entire message must be <= 1024 bytes
-		// - the TAG field must not exceed 32 characters
-		fmt.Fprintf(buf, "<%s>%s %s %.32s[%s]: %s\n",
-			priority, timestamp, hostname, tag, pid, data,
-		)
-*/
-	case Rfc3164Format:
-		// notes from RFC:
-		// - the entire message must be <= 1024 bytes
-		// - the TAG field must not exceed 32 characters
-		fmt.Fprintf(buf, "%s %s %.32s[%s]: %s\n",
-			timestamp, hostname, tag, pid, data,
-		)
+	msg := HumioMessage{
+		Timestamp: timestamp.String(),
+		Priority:  priority.String(),
+		Hostname:  hostname.String(),
+		Tag:       tag.String(),
+		Pid:       pid.String(),
+		Data:      data.String(),
+		Source:    m.Source(),
 	}
 
-	return buf.Bytes(), nil
+	return &msg, nil
+
 }
 
-// Priority returns a syslog.Priority based on the message source
-func (m *Message) Priority() syslog.Priority {
+// Source returns a source string based on the message source
+func (m *Message) Source() string {
 	switch m.Message.Source {
 	case "stdout":
-		return syslog.LOG_USER | syslog.LOG_INFO
+		return "user"
 	case "stderr":
-		return syslog.LOG_USER | syslog.LOG_ERR
+		return "user"
 	default:
-		return syslog.LOG_DAEMON | syslog.LOG_INFO
+		return "daemon"
+	}
+}
+
+// Priority returns a priority string
+func (m *Message) Priority() string {
+	switch m.Message.Source {
+	case "stdout":
+		return "INFO"
+	case "stderr":
+		return "ERR"
+	default:
+		return "INFO"
 	}
 }
 
