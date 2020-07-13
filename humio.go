@@ -338,13 +338,13 @@ func (a *HumioAdapter) flushHttp(reason string) {
 			}
 		}
 
-		hm, err := m.Render(a.tmpl)
+		hm, err := m.Render(a.tmpl, evt)
 		if err != nil {
 			log.Println("humio:", err)
 			continue
 		}
 
-		message, err := json.Marshal(hm)
+		message, err := json.Marshal(*hm)
 		if err != nil {
 			debug("flushHttp - Error encoding JSON: ", err)
 			continue
@@ -450,7 +450,7 @@ type Message struct {
 }
 
 // Render transforms the log message using the Syslog template
-func (m *Message) Render(tmpl *FieldTemplates) (*HumioMessage, error) {
+func (m *Message) Render(tmpl *FieldTemplates, evt HumioMessageEvent) (*HumioMessage, error) {
 
 	priority := new(bytes.Buffer)
 	if err := tmpl.priority.Execute(priority, m); err != nil {
